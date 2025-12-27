@@ -18,10 +18,10 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 0; /* Remove padding from body to let footer sit flush if needed */
+            padding: 0; 
             line-height: 1.5;
             display: flex;
-            flex-direction: column; /* Stack app and footer */
+            flex-direction: column;
             align-items: center;
             min-height: 100vh;
         }
@@ -29,8 +29,8 @@
         #app {
             width: 100%;
             max-width: 600px;
-            padding: 2rem; /* Add padding here instead */
-            flex: 1; /* Push footer down */
+            padding: 2rem;
+            flex: 1;
             box-sizing: border-box;
         }
 
@@ -132,7 +132,6 @@
             background: linear-gradient(90deg, rgba(255,0,0,0.1), rgba(255,0,0,0.4));
             opacity: 0;
             pointer-events: none;
-            /* Transition opacity to visualize the "waiting" period */
             transition: opacity 2s ease-in; 
         }
 
@@ -187,7 +186,6 @@
             justify-content: center;
             align-items: center;
             gap: 0.5rem;
-            /* No longer fixed */
             margin-top: auto;
         }
 
@@ -358,7 +356,6 @@
             targetEl.classList.add('heating-up');
 
             if (typeof targetEl.prepareExpansion === 'function') {
-                // No wait promise needed anymore - just go
                 targetEl.prepareExpansion(thisJobId).catch(console.error);
             }
         }
@@ -455,9 +452,6 @@
                      // Start Fetching immediately but quietly
                      loading = true; 
                      
-                     const originalText = span.innerText;
-                     statusEl.innerText = `Hot potato ${originalText}...`;
-
                      let categories = [];
                      try {
                          categories = await fetchCategories(newLineage);
@@ -469,7 +463,6 @@
                      if (jobId !== hotPotatoJobId) {
                          // Abandoned. Reset local loading state.
                          loading = false;
-                         statusEl.innerText = "Ready.";
                          return; 
                      }
                      
@@ -487,10 +480,8 @@
                         if (!loaded) {
                             loading = true;
                             globalLoading = true;
-                            const originalText = span.innerText;
                             span.classList.add("loading-dots");
-                            statusEl.innerText = `Unravelling ${originalText}...`;
-
+                            
                             const categories = await fetchCategories(newLineage);
                             finishExpansion(categories);
                         }
@@ -508,7 +499,6 @@
                 expanded = true;
                 
                 span.classList.remove("loading-dots");
-                statusEl.innerText = "Ready.";
                 
                 li.classList.add("expanded");
                 childrenUl.classList.remove("hidden");
@@ -553,11 +543,13 @@
             const topic = seedInput.value.trim();
             if (!topic) return;
 
+            // Hide status when user starts
+            statusEl.style.display = 'none';
+
             rootList.innerHTML = "";
             cancelHotPotato();
             
             startBtn.disabled = true;
-            statusEl.innerText = `Unravelling ${topic}...`;
             
             globalLoading = true;
             const initialLineage = [topic];
@@ -568,7 +560,6 @@
                 rootList.appendChild(createTreeItem(cat, initialLineage));
             });
             
-            statusEl.innerText = "Ready.";
             startBtn.disabled = false;
         };
 
