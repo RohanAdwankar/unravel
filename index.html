@@ -22,11 +22,14 @@
             line-height: 1.5;
             display: flex;
             justify-content: center;
+            min-height: 100vh;
+            position: relative;
         }
 
         #app {
             width: 100%;
             max-width: 600px;
+            padding-bottom: 4rem; /* Space for footer */
         }
 
         h1 {
@@ -109,10 +112,29 @@
             cursor: pointer;
             user-select: none;
             transition: background-color 0.2s;
+            position: relative;
+            overflow: hidden; /* For the gradient overlay */
         }
 
         .item-content:hover {
             background-color: var(--hover-color);
+        }
+
+        /* Hot Potato Gradient Overlay */
+        .hot-potato-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(255,0,0,0.1), rgba(255,0,0,0.4));
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 5s ease-in; /* 5 second buildup */
+        }
+
+        .item-content.heating-up .hot-potato-overlay {
+            opacity: 1;
         }
 
         .toggle-icon {
@@ -123,6 +145,7 @@
             display: inline-block;
             fill: currentColor;
             opacity: 0.5;
+            z-index: 1;
         }
 
         .expanded > .item-content > .toggle-icon {
@@ -131,6 +154,7 @@
 
         .item-text {
             font-weight: 500;
+            z-index: 1;
         }
 
         .loading-dots::after {
@@ -147,6 +171,74 @@
 
         .hidden {
             display: none;
+        }
+
+        /* Footer */
+        footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: #fff;
+            border-top: 1px solid var(--border-color);
+            padding: 1rem;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #ff4d4d; /* Red for hot potato */
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+
+        .footer-label {
+            font-weight: 500;
+            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -165,6 +257,14 @@
         </div>
     </div>
 
+    <footer>
+        <span class="footer-label">Hot Potato Mode</span>
+        <label class="switch">
+            <input type="checkbox" id="hot-potato-toggle">
+            <span class="slider"></span>
+        </label>
+    </footer>
+
     <script type="module">
         import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
@@ -172,26 +272,114 @@
         const startBtn = document.getElementById("start-btn");
         const seedInput = document.getElementById("seed-input");
         const rootList = document.getElementById("root-list");
+        const hotPotatoToggle = document.getElementById("hot-potato-toggle");
 
         let engine;
         const selectedModel = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-
         const chevronRight = `<svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`;
+
+        // State
+        let isHotPotatoEnabled = false;
+        let globalLoading = false; // To prevent concurrent expansions
+        let mouseX = 0;
+        let mouseY = 0;
+        
+        // Hot Potato State
+        let currentHotTarget = null;
+        let hotPotatoJobId = 0; 
+
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        hotPotatoToggle.addEventListener('change', (e) => {
+            isHotPotatoEnabled = e.target.checked;
+            if (!isHotPotatoEnabled) {
+                cancelHotPotato();
+            }
+        });
+
+        function cancelHotPotato() {
+            if (currentHotTarget) {
+                currentHotTarget.classList.remove('heating-up');
+                currentHotTarget = null;
+            }
+            hotPotatoJobId++; // Increment job ID to invalidate pending jobs
+        }
+
+        // Loop to check proximity
+        setInterval(() => {
+            if (!isHotPotatoEnabled || globalLoading) return;
+            
+            // Find all valid candidates
+            const candidates = Array.from(document.querySelectorAll('.item-content'));
+            
+            let closest = null;
+            let minDist = Infinity;
+
+            for (const el of candidates) {
+                const li = el.parentElement;
+                // Must be not expanded, visible
+                if (!li || li.classList.contains('expanded') || el.offsetParent === null) {
+                    continue;
+                }
+
+                const rect = el.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const dist = Math.hypot(mouseX - centerX, mouseY - centerY);
+
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = el;
+                }
+            }
+
+            // Threshold for "closest" - you have to be somewhat near the list
+            // let's say 500px to keep it responsive even if you drift away a bit, 
+            // but strict enough so random mouse movements across screen don't trigger weirdly
+            if (minDist > 500) closest = null;
+
+            // If we found a closest item and it's different from current, switch
+            if (closest && closest !== currentHotTarget) {
+                // Cancel old
+                cancelHotPotato();
+                
+                // Start new
+                currentHotTarget = closest;
+                startHotPotatoJob(closest);
+            }
+        }, 200); 
+
+        async function startHotPotatoJob(targetEl) {
+            // New job started
+            // hotPotatoJobId was incremented in cancelHotPotato just before this call if we switched targets
+            const thisJobId = hotPotatoJobId;
+            
+            // Add visual class to trigger 5s CSS transition
+            targetEl.classList.add('heating-up');
+
+            if (typeof targetEl.prepareExpansion === 'function') {
+                const minWaitPromise = new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // Fire and forget - the prepareExpansion method handles the waiting and verification
+                targetEl.prepareExpansion(thisJobId, minWaitPromise).catch(console.error);
+            }
+        }
+
 
         async function initEngine() {
             try {
                 startBtn.disabled = true;
-                
                 const createdEngine = await webllm.CreateMLCEngine(selectedModel, {
                     initProgressCallback: (p) => {
                         statusEl.innerText = p.text;
                     }
                 });
-                
                 engine = createdEngine;
                 statusEl.innerText = "Engine ready. Click start to unravel.";
                 startBtn.disabled = false;
-                
             } catch (err) {
                 statusEl.innerText = "Error loading engine: " + err.message;
                 console.error(err);
@@ -233,6 +421,11 @@
             const content = document.createElement("div");
             content.className = "item-content";
             
+            // Overlay for hot potato effect
+            const overlay = document.createElement("div");
+            overlay.className = "hot-potato-overlay";
+            content.appendChild(overlay);
+            
             const icon = document.createElement("span");
             icon.className = "toggle-icon";
             icon.innerHTML = chevronRight;
@@ -255,46 +448,114 @@
 
             const newLineage = [...lineage, text];
 
-            content.onclick = async (e) => {
-                e.stopPropagation();
+            const expand = async (isHotPotato = false, jobId = -1, waitPromise = null) => {
+                // If manually clicked, ensure we cancel any ongoing hot potato job first
+                if (!isHotPotato) {
+                    cancelHotPotato();
+                }
 
                 if (loading) return;
 
-                expanded = !expanded;
-                
-                if (expanded) {
-                    li.classList.add("expanded");
-                    childrenUl.classList.remove("hidden");
+                if (isHotPotato) {
+                     // Start Fetching immediately but quietly (don't block UI yet)
+                     // We mark loading true to prevent double entry, but we handle the 'globalLoading' carefully
+                     loading = true; 
+                     
+                     // We don't set globalLoading = true yet because that would stop the proximity check
+                     // We want the proximity check to continue so the user can abandon this item
+                     
+                     const originalText = span.innerText;
+                     statusEl.innerText = `Pre-loading ${originalText}...`;
 
-                    if (!loaded) {
-                        loading = true;
-                        const originalText = span.innerText;
-                        span.classList.add("loading-dots");
-                        statusEl.innerText = `Unravelling ${originalText}...`;
+                     let categories = [];
+                     try {
+                         categories = await fetchCategories(newLineage);
+                     } catch(e) {
+                         categories = [];
+                     }
 
-                        const categories = await fetchCategories(newLineage);
-                        
-                        loading = false;
-                        loaded = true;
-                        span.classList.remove("loading-dots");
-                        statusEl.innerText = "Ready.";
+                     // Wait for the remainder of the 5 seconds
+                     if (waitPromise) {
+                         await waitPromise;
+                     }
 
-                        if (categories.length > 0) {
-                            categories.forEach(cat => {
-                                childrenUl.appendChild(createTreeItem(cat, newLineage));
-                            });
-                        } else {
-                             const empty = document.createElement("li");
-                             empty.innerText = "(No sub-categories found)";
-                             empty.style.paddingLeft = "2rem";
-                             empty.style.color = "#999";
-                             childrenUl.appendChild(empty);
-                        }
-                    }
+                     // Check abandonment
+                     if (jobId !== hotPotatoJobId) {
+                         // Abandoned. Reset local loading state.
+                         loading = false;
+                         statusEl.innerText = "Ready.";
+                         return; 
+                     }
+                     
+                     // Not abandoned. Now strictly apply global loading to prevent conflicts during render
+                     globalLoading = true;
+                     finishExpansion(categories);
+
                 } else {
-                    li.classList.remove("expanded");
-                    childrenUl.classList.add("hidden");
+                    // Normal Manual Click
+                    expanded = !expanded;
+                    if (expanded) {
+                        li.classList.add("expanded");
+                        childrenUl.classList.remove("hidden");
+
+                        if (!loaded) {
+                            loading = true;
+                            globalLoading = true;
+                            const originalText = span.innerText;
+                            span.classList.add("loading-dots");
+                            statusEl.innerText = `Unravelling ${originalText}...`;
+
+                            const categories = await fetchCategories(newLineage);
+                            finishExpansion(categories);
+                        }
+                    } else {
+                        li.classList.remove("expanded");
+                        childrenUl.classList.add("hidden");
+                    }
                 }
+            };
+
+            const finishExpansion = (categories) => {
+                loading = false;
+                loaded = true;
+                globalLoading = false;
+                expanded = true;
+                
+                span.classList.remove("loading-dots");
+                statusEl.innerText = "Ready.";
+                
+                li.classList.add("expanded");
+                childrenUl.classList.remove("hidden");
+                
+                // Clear hot potato visuals instantly
+                content.classList.remove('heating-up');
+                
+                // Also clear the global target reference if it matches this one
+                if (currentHotTarget === content) {
+                    currentHotTarget = null;
+                }
+
+                if (categories.length > 0) {
+                    categories.forEach(cat => {
+                        childrenUl.appendChild(createTreeItem(cat, newLineage));
+                    });
+                } else {
+                        const empty = document.createElement("li");
+                        empty.innerText = "(No sub-categories found)";
+                        empty.style.paddingLeft = "2rem";
+                        empty.style.color = "#999";
+                        childrenUl.appendChild(empty);
+                }
+            };
+
+            // Attach method to DOM element
+            content.prepareExpansion = (jobId, waitPromise) => {
+                return expand(true, jobId, waitPromise);
+            };
+
+            content.onclick = (e) => {
+                e.stopPropagation();
+                expand(false);
             };
 
             return li;
@@ -307,12 +568,15 @@
             if (!topic) return;
 
             rootList.innerHTML = "";
+            cancelHotPotato();
             
             startBtn.disabled = true;
             statusEl.innerText = `Unravelling ${topic}...`;
             
+            globalLoading = true;
             const initialLineage = [topic];
             const categories = await fetchCategories(initialLineage);
+            globalLoading = false;
             
             categories.forEach(cat => {
                 rootList.appendChild(createTreeItem(cat, initialLineage));
