@@ -177,41 +177,49 @@
         const selectedModel = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
         const chevronRight = `<svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`;
-        const circleDot = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>`;
 
         async function initEngine() {
             try {
-                engine = await webllm.CreateMLCEngine(selectedModel, {
+                startBtn.disabled = true;
+                
+                const createdEngine = await webllm.CreateMLCEngine(selectedModel, {
                     initProgressCallback: (p) => {
                         statusEl.innerText = p.text;
-                        if (p.progress === 1) {
-                            statusEl.innerText = "Engine ready. Click start to unravel.";
-                            startBtn.disabled = false;
-                        }
                     }
                 });
+                
+                engine = createdEngine;
+                statusEl.innerText = "Engine ready. Click start to unravel.";
+                startBtn.disabled = false;
+                
             } catch (err) {
                 statusEl.innerText = "Error loading engine: " + err.message;
                 console.error(err);
             }
         }
 
-        async function fetchCategories(topic) {
-            const prompt = `Generate a comma-separated list of 5 distinct sub-categories or types of "${topic}". 
-            Return ONLY the list separated by commas. Do not number them. Do not include any intro or outro text.
-            Example output: category1, category2, category3, category4, category5`;
+        async function fetchCategories(lineage) {
+            const currentTopic = lineage[lineage.length - 1];
+            const context = lineage.join(" > ");
+            
+            const prompt = `The user is navigating a specific hierarchy: ${context}.
+            Generate a comma-separated list of 5 distinct, specific sub-categories or types of "${currentTopic}" that strictly belong within this hierarchy.
+            Do not repeat the parent category name. Be precise and specific.
+            Return ONLY the list separated by commas. Do not number them. Do not include the word and`;
 
             try {
+                if (!engine) throw new Error("Engine not initialized");
+
                 const response = await engine.chat.completions.create({
                     messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7, // Some creativity
+                    temperature: 0.7,
                     max_tokens: 100,
                 });
                 
                 const text = response.choices[0].message.content;
                 const items = text.split(',')
                     .map(s => s.trim())
-                    .filter(s => s.length > 0 && !s.toLowerCase().includes("here is a list")); // Basic cleanup
+                    .filter(s => s.length > 0 && !s.toLowerCase().includes("here is a list"));
                 return items.slice(0, 8);
             } catch (e) {
                 console.error("Generation error", e);
@@ -219,7 +227,7 @@
             }
         }
 
-        function createTreeItem(text) {
+        function createTreeItem(text, lineage) {
             const li = document.createElement("li");
             li.className = "tree-item";
             
@@ -246,6 +254,8 @@
             let loading = false;
             let expanded = false;
 
+            const newLineage = [...lineage, text];
+
             content.onclick = async (e) => {
                 e.stopPropagation();
 
@@ -263,7 +273,7 @@
                         span.classList.add("loading-dots");
                         statusEl.innerText = `Unravelling ${originalText}...`;
 
-                        const categories = await fetchCategories(text);
+                        const categories = await fetchCategories(newLineage);
                         
                         loading = false;
                         loaded = true;
@@ -272,7 +282,7 @@
 
                         if (categories.length > 0) {
                             categories.forEach(cat => {
-                                childrenUl.appendChild(createTreeItem(cat));
+                                childrenUl.appendChild(createTreeItem(cat, newLineage));
                             });
                         } else {
                              const empty = document.createElement("li");
@@ -292,6 +302,8 @@
         }
 
         startBtn.onclick = async () => {
+            if (!engine) return; 
+
             const topic = seedInput.value.trim();
             if (!topic) return;
 
@@ -300,10 +312,11 @@
             startBtn.disabled = true;
             statusEl.innerText = `Unravelling ${topic}...`;
             
-            const categories = await fetchCategories(topic);
+            const initialLineage = [topic];
+            const categories = await fetchCategories(initialLineage);
             
             categories.forEach(cat => {
-                rootList.appendChild(createTreeItem(cat));
+                rootList.appendChild(createTreeItem(cat, initialLineage));
             });
             
             statusEl.innerText = "Ready.";
