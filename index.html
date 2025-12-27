@@ -18,18 +18,20 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 2rem;
+            padding: 0; /* Remove padding from body to let footer sit flush if needed */
             line-height: 1.5;
             display: flex;
-            justify-content: center;
+            flex-direction: column; /* Stack app and footer */
+            align-items: center;
             min-height: 100vh;
-            position: relative;
         }
 
         #app {
             width: 100%;
             max-width: 600px;
-            padding-bottom: 4rem; /* Space for footer */
+            padding: 2rem; /* Add padding here instead */
+            flex: 1; /* Push footer down */
+            box-sizing: border-box;
         }
 
         h1 {
@@ -130,7 +132,8 @@
             background: linear-gradient(90deg, rgba(255,0,0,0.1), rgba(255,0,0,0.4));
             opacity: 0;
             pointer-events: none;
-            transition: opacity 5s ease-in; /* 5 second buildup */
+            /* Transition opacity to visualize the "waiting" period */
+            transition: opacity 2s ease-in; 
         }
 
         .item-content.heating-up .hot-potato-overlay {
@@ -175,9 +178,6 @@
 
         /* Footer */
         footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
             width: 100%;
             background-color: #fff;
             border-top: 1px solid var(--border-color);
@@ -187,8 +187,8 @@
             justify-content: center;
             align-items: center;
             gap: 0.5rem;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
-            z-index: 10;
+            /* No longer fixed */
+            margin-top: auto;
         }
 
         .switch {
@@ -336,9 +336,7 @@
                 }
             }
 
-            // Threshold for "closest" - you have to be somewhat near the list
-            // let's say 500px to keep it responsive even if you drift away a bit, 
-            // but strict enough so random mouse movements across screen don't trigger weirdly
+            // Threshold for "closest"
             if (minDist > 500) closest = null;
 
             // If we found a closest item and it's different from current, switch
@@ -354,17 +352,14 @@
 
         async function startHotPotatoJob(targetEl) {
             // New job started
-            // hotPotatoJobId was incremented in cancelHotPotato just before this call if we switched targets
             const thisJobId = hotPotatoJobId;
             
-            // Add visual class to trigger 5s CSS transition
+            // Add visual class to trigger heating up animation
             targetEl.classList.add('heating-up');
 
             if (typeof targetEl.prepareExpansion === 'function') {
-                const minWaitPromise = new Promise(resolve => setTimeout(resolve, 5000));
-                
-                // Fire and forget - the prepareExpansion method handles the waiting and verification
-                targetEl.prepareExpansion(thisJobId, minWaitPromise).catch(console.error);
+                // No wait promise needed anymore - just go
+                targetEl.prepareExpansion(thisJobId).catch(console.error);
             }
         }
 
@@ -448,7 +443,7 @@
 
             const newLineage = [...lineage, text];
 
-            const expand = async (isHotPotato = false, jobId = -1, waitPromise = null) => {
+            const expand = async (isHotPotato = false, jobId = -1) => {
                 // If manually clicked, ensure we cancel any ongoing hot potato job first
                 if (!isHotPotato) {
                     cancelHotPotato();
@@ -457,26 +452,17 @@
                 if (loading) return;
 
                 if (isHotPotato) {
-                     // Start Fetching immediately but quietly (don't block UI yet)
-                     // We mark loading true to prevent double entry, but we handle the 'globalLoading' carefully
+                     // Start Fetching immediately but quietly
                      loading = true; 
                      
-                     // We don't set globalLoading = true yet because that would stop the proximity check
-                     // We want the proximity check to continue so the user can abandon this item
-                     
                      const originalText = span.innerText;
-                     statusEl.innerText = `Pre-loading ${originalText}...`;
+                     statusEl.innerText = `Hot potato ${originalText}...`;
 
                      let categories = [];
                      try {
                          categories = await fetchCategories(newLineage);
                      } catch(e) {
                          categories = [];
-                     }
-
-                     // Wait for the remainder of the 5 seconds
-                     if (waitPromise) {
-                         await waitPromise;
                      }
 
                      // Check abandonment
@@ -487,7 +473,7 @@
                          return; 
                      }
                      
-                     // Not abandoned. Now strictly apply global loading to prevent conflicts during render
+                     // Not abandoned. Now strictly apply global loading to prevent conflicts
                      globalLoading = true;
                      finishExpansion(categories);
 
@@ -549,8 +535,8 @@
             };
 
             // Attach method to DOM element
-            content.prepareExpansion = (jobId, waitPromise) => {
-                return expand(true, jobId, waitPromise);
+            content.prepareExpansion = (jobId) => {
+                return expand(true, jobId);
             };
 
             content.onclick = (e) => {
