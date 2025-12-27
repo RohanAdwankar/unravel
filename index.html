@@ -202,10 +202,9 @@
             const currentTopic = lineage[lineage.length - 1];
             const context = lineage.join(" > ");
             
-            const prompt = `The user is navigating a specific hierarchy: ${context}.
-            Generate a comma-separated list of 5 distinct, specific sub-categories or types of "${currentTopic}" that strictly belong within this hierarchy.
+            const prompt = `Generate a comma-separated list of 5 distinct, specific sub-categories or types of "${currentTopic}" that strictly belong within the ${context} hierarchy.
             Do not repeat the parent category name. Be precise and specific.
-            Return ONLY the list separated by commas. Do not number them. Do not include the word and`;
+            Return ONLY the list separated by commas. Do not number them. Do not include any intro or outro text. Do not include the word and`;
 
             try {
                 if (!engine) throw new Error("Engine not initialized");
