@@ -181,12 +181,17 @@
             background-color: #fff;
             border-top: 1px solid var(--border-color);
             padding: 1rem;
-            text-align: center;
             display: flex;
-            justify-content: center;
+            flex-direction: column; /* Stack items */
+            align-items: center;
+            gap: 1rem;
+            margin-top: auto;
+        }
+
+        .hot-potato-row {
+            display: flex;
             align-items: center;
             gap: 0.5rem;
-            margin-top: auto;
         }
 
         .switch {
@@ -238,6 +243,32 @@
             font-weight: 500;
             font-size: 0.9rem;
         }
+
+        /* FAQ Section */
+        #faq-list {
+            width: 100%;
+            max-width: 600px;
+            padding: 0;
+            margin: 0;
+            list-style: none;
+            border-top: 1px solid var(--border-color); /* Separator */
+            padding-top: 1rem;
+        }
+
+        .faq-answer {
+            padding: 0.5rem 0.5rem 0.5rem 2rem;
+            font-size: 0.9rem;
+            color: #495057;
+        }
+
+        .chat-input-container {
+            padding: 0.5rem 0;
+        }
+
+        #chat-response {
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -256,11 +287,17 @@
     </div>
 
     <footer>
-        <span class="footer-label">Hot Potato Mode</span>
-        <label class="switch">
-            <input type="checkbox" id="hot-potato-toggle">
-            <span class="slider"></span>
-        </label>
+        <div class="hot-potato-row">
+            <span class="footer-label">Hot Potato Mode</span>
+            <label class="switch">
+                <input type="checkbox" id="hot-potato-toggle">
+                <span class="slider"></span>
+            </label>
+        </div>
+        
+        <ul id="faq-list">
+            <!-- Populated by JS -->
+        </ul>
     </footer>
 
     <script type="module">
@@ -271,6 +308,7 @@
         const seedInput = document.getElementById("seed-input");
         const rootList = document.getElementById("root-list");
         const hotPotatoToggle = document.getElementById("hot-potato-toggle");
+        const faqList = document.getElementById("faq-list");
 
         let engine;
         const selectedModel = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
@@ -311,7 +349,8 @@
             if (!isHotPotatoEnabled || globalLoading) return;
             
             // Find all valid candidates
-            const candidates = Array.from(document.querySelectorAll('.item-content'));
+            // Limit to items in the main tree (root-list) to avoid heating up the FAQ
+            const candidates = Array.from(document.querySelectorAll('#root-list .item-content'));
             
             let closest = null;
             let minDist = Infinity;
@@ -372,6 +411,10 @@
                 engine = createdEngine;
                 statusEl.innerText = "Engine ready. Click start to unravel.";
                 startBtn.disabled = false;
+                
+                // Setup FAQ after engine init
+                setupFAQ();
+                
             } catch (err) {
                 statusEl.innerText = "Error loading engine: " + err.message;
                 console.error(err);
@@ -535,6 +578,89 @@
             };
 
             return li;
+        }
+
+        function createFAQItem(question, type) {
+            const li = document.createElement("li");
+            li.className = "tree-item";
+            
+            const content = document.createElement("div");
+            content.className = "item-content";
+            
+            const icon = document.createElement("span");
+            icon.className = "toggle-icon";
+            icon.innerHTML = chevronRight;
+            
+            const span = document.createElement("span");
+            span.className = "item-text";
+            span.innerText = question;
+
+            content.appendChild(icon);
+            content.appendChild(span);
+            li.appendChild(content);
+
+            const answerDiv = document.createElement("div");
+            answerDiv.className = "faq-answer hidden";
+            
+            if (type === "text") {
+                answerDiv.innerText = "This works by compiling the LLM (Llama 3.2) to WebGPU instructions using MLC LLM. The model runs entirely in your browser using your local GPU, so no data is sent to a server after the model is pulled from Hugging Face.";
+            } else if (type === "chat") {
+                const input = document.createElement("input");
+                input.type = "text";
+                input.placeholder = "Ask it yourself...";
+                input.style.width = "100%";
+                input.style.marginTop = "0.5rem";
+
+                const responseDiv = document.createElement("div");
+                responseDiv.id = "chat-response";
+
+                input.onkeydown = async (e) => {
+                    if (e.key === "Enter" && !input.disabled) {
+                        const prompt = input.value.trim();
+                        if (!prompt) return;
+                        
+                        input.disabled = true;
+                        responseDiv.innerText = "Thinking...";
+                        
+                        try {
+                            const response = await engine.chat.completions.create({
+                                messages: [{ role: "user", content: prompt }],
+                                max_tokens: 150,
+                            });
+                            responseDiv.innerText = response.choices[0].message.content;
+                        } catch(err) {
+                            responseDiv.innerText = "Error: " + err.message;
+                        }
+                        
+                        input.disabled = false;
+                        input.focus();
+                    }
+                }
+                
+                answerDiv.appendChild(input);
+                answerDiv.appendChild(responseDiv);
+            }
+
+            li.appendChild(answerDiv);
+
+            let expanded = false;
+            content.onclick = () => {
+                expanded = !expanded;
+                if (expanded) {
+                    li.classList.add("expanded");
+                    answerDiv.classList.remove("hidden");
+                } else {
+                    li.classList.remove("expanded");
+                    answerDiv.classList.add("hidden");
+                }
+            };
+
+            return li;
+        }
+
+        function setupFAQ() {
+            faqList.appendChild(createFAQItem("How is there an LLM on a Static Site?", "text"));
+            faqList.appendChild(createFAQItem("Can I talk to the LLM like normal?", "chat"));
         }
 
         startBtn.onclick = async () => {
